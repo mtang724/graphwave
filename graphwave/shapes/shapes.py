@@ -77,8 +77,8 @@ def clique(start, nb_nodes, nb_to_remove=0, role_start=0, plot=False):
         to_delete = [edge_list[e] for e in lst]
         graph.remove_edges_from(to_delete)
         for e in lst:
-            print edge_list[e][0]
-            print len(roles)
+            print (edge_list[e][0])
+            print (len(roles))
             roles[edge_list[e][0]] += 1
             roles[edge_list[e][1]] += 1
     mapping_graph = {k: (k + start) for k in range(nb_nodes)}
@@ -193,7 +193,7 @@ def hollow(start, role_start=0, plot=False):
     return graph, roles
 
 
-def house(start, role_start=0, plot=False):
+def house(start, role_start=0, plot=False, feature_no=None):
     '''Builds a house-like  graph, with index of nodes starting at start
     and role_ids at role_start
     INPUT:
@@ -207,6 +207,8 @@ def house(start, role_start=0, plot=False):
     roles       :    list of the roles of the nodes (indexed starting at
                      role_start)
     '''
+    if feature_no != None:
+        role_start = feature_no
     graph = nx.Graph()
     graph.add_nodes_from(range(start, start + 5))
     graph.add_edges_from([(start, start + 1), (start + 1, start + 2),
@@ -215,6 +217,10 @@ def house(start, role_start=0, plot=False):
     graph.add_edges_from([(start + 4, start), (start + 4, start + 1)])
     roles = [role_start, role_start, role_start + 1,
              role_start + 1, role_start + 2]
+    attrs = {}
+    for node in graph.nodes:
+        attrs[node] = {"attr": np.array([feature_no, feature_no, feature_no, feature_no, feature_no, graph.degree[node]])}
+    nx.set_node_attributes(graph, attrs)
     if plot is True: plot_networkx(graph, roles)
     return graph, roles
 

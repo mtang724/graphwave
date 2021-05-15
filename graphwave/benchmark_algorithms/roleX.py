@@ -19,8 +19,19 @@ from scipy.cluster.vq import kmeans2, vq
 from scipy.linalg import norm
 from scipy.optimize import minimize
 from sklearn.decomposition import NMF
+import networkx as nx
+import numpy as np
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans
+import matplotlib.pyplot as plt
+import sklearn as sk
+import pandas as pd
+import torch
+sys.path.append('../')
+from utils.utils import read_real_datasets, NodeClassificationDataset, MLP, DataSplit
 
-def extract_rolx_roles(G, roles=2):
+def extract_rolx_roles(G, roles=5):
     """
     Top-level function. Extracts node-role matrix and sensemaking role-feature matrix as necessary.
     """
@@ -371,22 +382,152 @@ def complete_factor(H, M, h_on_left=True):
     G = np.matrix(x).reshape(shape)
     return G
 
-def main(argv):
-    G = igraph.Graph.Read_GML(argv[0])
-
-    if len(argv) > 1:
-        roles = int(argv[1])
-        A=nx.adjacency_matrix(G).todense()
-        Gi=igraph.Graph.Adjacency((A > 0).tolist())
-        test=extract_rolx_roles(Gi, roles=roles)
+def main(G_path, role_id_num):
+    G = igraph.Graph.Read_GML(G_path)
+    return extract_rolx_roles(G, roles=role_id_num)
+    # if len(argv) > 0:
+        # roles = role_id_num
+        #A = nx.adjacency_matrix(G).todense()
+        #Gi = igraph.Graph.Adjacency((A > 0).tolist())
+        #test = extract_rolx_roles(Gi, roles=roles)
         ### Define a distance based on these distribution over roles
-        D_roleX=distance_nodes(test)
-        return extract_rolx_roles(Gi, roles=roles)
-    else:
-        return extract_rolx_roles(G)
+        # D_roleX = distance_nodes(test)
+        #return extract_rolx_roles(G, roles=roles)
+    # else:
 
-    return H, K
+    # return H, K
+
+def read_roleid(path_to_file):
+    role_id = []
+    with open(path_to_file) as f:
+        contents = f.readlines()
+        for content in contents:
+            role_id.append(int(content))
+    return role_id
+
+def cluster_graph(role_id, node_embeddings):
+    colors = role_id
+    nb_clust = len(np.unique(role_id))
+    pca = PCA(n_components=5)
+    trans_data = pca.fit_transform(StandardScaler().fit_transform(node_embeddings))
+    km = KMeans(n_clusters=nb_clust)
+    km.fit(trans_data)
+    labels_pred = km.labels_
+
+    ######## Params for plotting
+    cmapx = plt.get_cmap('rainbow')
+    x = np.linspace(0, 1, nb_clust + 1)
+    col = [cmapx(xx) for xx in x]
+    markers = {0: '*', 1: '.', 2: ',', 3: 'o', 4: 'v', 5: '^', 6: '<', 7: '>', 8: 3, 9: 'd', 10: '+', 11: 'x',
+               12: 'D', 13: '|', 14: '_', 15: 4, 16: 0, 17: 1, 18: 2, 19: 6, 20: 7}
+
+    for c in np.unique(role_id):
+        indc = [i for i, x in enumerate(role_id) if x == c]
+        plt.scatter(trans_data[indc, 0], trans_data[indc, 1],
+                    c=np.array(col)[list(np.array(labels_pred)[indc])],
+                    marker=markers[c % len(markers)], s=300)
+
+    labels = role_id
+    for label, c, x, y in zip(labels, labels_pred, trans_data[:, 0], trans_data[:, 1]):
+        plt.annotate(label, xy=(x, y), xytext=(0, 0), textcoords='offset points')
+    plt.show()
+    return labels_pred, colors, trans_data, nb_clust
 
 
-#if __name__ == "__main__":
-#    main(sys.argv[1:])
+def unsupervised_evaluate(colors, labels_pred, trans_data, nb_clust):
+    ami = sk.metrics.adjusted_mutual_info_score(colors, labels_pred)
+    sil = sk.metrics.silhouette_score(trans_data, labels_pred, metric='euclidean')
+    ch = sk.metrics.calinski_harabasz_score(trans_data, labels_pred)
+    hom = sk.metrics.homogeneity_score(colors, labels_pred)
+    comp = sk.metrics.completeness_score(colors, labels_pred)
+    #print('Homogeneity \t Completeness \t AMI \t nb clusters \t CH \t  Silhouette \n')
+    #print(str(hom) + '\t' + str(comp) + '\t' + str(ami) + '\t' + str(nb_clust) + '\t' + str(ch) + '\t' + str(sil))
+    return hom, comp, ami, nb_clust, ch, sil
+
+def draw_pca(role_id, node_embeddings):
+    cmap = plt.get_cmap('hot')
+    x_range = np.linspace(0, 0.8, len(np.unique(role_id)))
+    coloring = {u: cmap(x_range[i]) for i, u in enumerate(np.unique(role_id))}
+    node_color = [coloring[role_id[i]] for i in range(len(role_id))]
+    pca = PCA(n_components=2)
+    node_embedded = StandardScaler().fit_transform(node_embeddings)
+    principalComponents = pca.fit_transform(node_embedded)
+    principalDf = pd.DataFrame(data=principalComponents,
+                               columns=['principal component 1', 'principal component 2'])
+    principalDf['target'] = role_id
+    fig = plt.figure(figsize=(8, 8))
+    ax = fig.add_subplot(1, 1, 1)
+    ax.set_xlabel('Principal Component 1', fontsize=15)
+    ax.set_ylabel('Principal Component 2', fontsize=15)
+    ax.set_title('2 PCA Components', fontsize=20)
+    targets = np.unique(role_id)
+    for target in zip(targets):
+        color = coloring[target[0]]
+        indicesToKeep = principalDf['target'] == target
+        ax.scatter(principalDf.loc[indicesToKeep, 'principal component 1'],
+                   principalDf.loc[indicesToKeep, 'principal component 2'],
+                   s=50,
+                   c=color)
+    ax.legend(targets)
+    ax.grid()
+    plt.show()
+
+
+if __name__ == "__main__":
+   role_id = read_roleid("../cycle.roleid")
+   role_id_num = len(set(role_id))
+   embeddings, attributes = main(sys.argv[1:][0], role_id_num = role_id_num)
+   labels_pred, colors, trans_data, nb_clust = cluster_graph(role_id, embeddings)
+   draw_pca(role_id, embeddings)
+   hom, comp, ami, nb_clust, ch, sil = unsupervised_evaluate(colors, labels_pred, trans_data, nb_clust)
+   print('Homogeneity \t Completeness \t AMI \t nb clusters \t CH \t  Silhouette \n')
+   print(hom, comp, ami, nb_clust, ch, sil)
+   # Real world data
+   G, labels = read_real_datasets("cornell")
+   nx.write_gml(G, "cornell.gml")
+   embeddings, attributes = main("cornell.gml", role_id_num=15)
+   node_embeddings, node_labels = embeddings, labels
+   input_dims = node_embeddings.shape
+   class_number = int(max(node_labels)) + 1
+   FNN = MLP(num_layers=5, input_dim=input_dims[1], hidden_dim=input_dims[1] // 2, output_dim=class_number)
+   criterion = torch.nn.CrossEntropyLoss()
+   optimizer = torch.optim.Adam(FNN.parameters())
+   dataset = NodeClassificationDataset(node_embeddings, node_labels)
+   split = DataSplit(dataset, shuffle=True)
+   train_loader, val_loader, test_loader = split.get_split(batch_size=64, num_workers=0)
+   # train_loader = DataLoader(dataset=dataset, batch_size=32, shuffle=True)
+   for epoch in range(50):
+       for i, data in enumerate(train_loader, 0):
+           # data = data.to(device)
+           inputs, labels = data
+           y_pred = FNN(inputs.float())
+           loss = criterion(y_pred, labels)
+           print(epoch, i, loss.item())
+           optimizer.zero_grad()
+           loss.backward()
+           optimizer.step()
+       correct = 0
+       total = 0
+       with torch.no_grad():
+           total_label_len = 0
+           total_correct = 0
+           for data in val_loader:
+               inputs, labels = data
+               total_label_len += len(labels)
+               outputs = FNN(inputs.float())
+               _, predicted = torch.max(outputs.data, 1)
+               correct = torch.sum(predicted == labels)
+               total_correct += correct.item()
+           print(total_correct * 1.0 / total_label_len)
+   correct = 0
+   total = 0
+   with torch.no_grad():
+       for data in test_loader:
+           inputs, labels = data
+           outputs = FNN(inputs.float())
+           _, predicted = torch.max(outputs.data, 1)
+           total += labels.size(0)
+           correct += (predicted == labels).sum().item()
+
+   print('Accuracy of the network on test set: %d %%' % (
+           100 * correct / total))
