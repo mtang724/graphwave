@@ -506,11 +506,11 @@ if __name__ == "__main__":
     acc = []
     for i in range(4):
         # G, labels = read_real_datasets("cornell")
-        G = nx.read_edgelist("citation/cora.edgelist")
-        nx.write_gml(G, "pubmed.gml")
-        embeddings, attributes = main("cora.gml")
+        G = nx.read_edgelist("realdatasets/wisconsin.edgelist")
+        nx.write_gml(G, "wisconsin.gml")
+        embeddings, attributes = main("wisconsin.gml")
         node_embeddings = embeddings
-        node_labels = read_roleid("citation/np_cora.txt")
+        node_labels = read_roleid("realdatasets/np_wisconsin.txt")
         node_labels = torch.FloatTensor(node_labels)
         input_dims = node_embeddings.shape
         class_number = int(max(node_labels)) + 1

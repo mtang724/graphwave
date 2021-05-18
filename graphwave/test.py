@@ -204,7 +204,7 @@ import torch
 import statistics
 
 acc = []
-for i in range(10):
+for i in range(4):
     G, labels = read_real_datasets("wisconsin")
     G = nx.read_edgelist("realdatasets/film.edgelist")
     node_labels = read_roleid("realdatasets/np_film.txt")
